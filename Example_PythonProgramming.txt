@@ -1,0 +1,235 @@
+#import all the required modules
+import os
+import sys
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import xgboost as xgb
+from sklearn.linear_model import RidgeCV
+from sklearn.linear_model import LassoCV
+from sklearn.ensemble import RandomForestRegressor
+
+#from sklearn.model_selection import cross_val_score
+from sklearn.cross_validation import cross_val_score
+from scipy.stats import skew
+from sklearn import decomposition
+
+
+################################section 1 : Read Data########################## 
+#set working directory
+working_dir = 'D:\Aakash_Documents\MS_Collections\AcceptanceFromSaintPeters\ClassStuff\DS_680_MrktgAnalytic\KaggleCompetitions\HousePricePrediction\data'
+
+#read the training dataset 
+train_df = pd.read_csv(working_dir+"\\train.csv", delimiter=',')
+
+test_df = pd.read_csv(working_dir+"\\test.csv", delimiter=',')
+     
+#index_train = pd.DataFrame()
+#index_test = pd.DataFrame()
+#xTrain= []
+#xTest= []    
+#df= pd.DataFrame()
+################################section 1 : End################################
+
+###############################section 2: define functions#####################
+####In this section different functions are defined to perform operations in 
+####later stage of the application code. Advantage of following function approach
+####is code reusability.
+ 
+models_rmse = []
+# Function1: to normalize the dataset
+def normalizeData(Numeric_columns):
+    means = df.loc[:, Numeric_columns].mean()
+    stdev = df.loc[:, Numeric_columns].std()
+    df.loc[:, Numeric_columns] = (df.loc[:, Numeric_columns] - means) / stdev
+    
+    index_train = df.loc[train_df.index]
+    index_test = df.loc[test_df.index]
+
+    xTrain=index_train.values
+    xTest=index_test.values
+        
+    df['LotArea'] = np.log(df['LotArea'])
+    df['LotFrontage'] = np.log(df['LotFrontage'])
+    return index_train,index_test,xTrain,xTest
+# Function1:end
+
+# Function2: Store target variable and remove skewness from data
+def _removeSkewness():
+    target = train_df['SalePrice']
+    plt.hist(target)
+    plt.show()
+    del train_df['SalePrice']
+
+    yTrain = np.log(target)
+    plt.hist(yTrain)
+    plt.xlabel('SalePrice')
+    plt.show()
+    return yTrain
+# Function2:end    
+
+# Function3: this fucntion is very important, it assign dummy variables for all
+# the categorical features. It also handles the missing values by assignment of
+# mean.
+def _dummyCreate():
+   df = pd.get_dummies(alldf)
+   df.isnull().sum().sort_values(ascending=False)
+   df = df.fillna(df.mean())
+   return df
+# Function3:end    
+
+"""
+"""
+# Function4: function to perform PCA(principal component analysis) and perform
+# lasso regression on test data to predict the selling price.
+def _pcaLassoRegr():
+    pca = decomposition.PCA()
+    pca.fit(xTrain)
+
+    fig = plt.figure(1, figsize=(4, 3))
+
+    plt.clf()
+    plt.axes([.2, .2, .7, .7])
+    plt.plot(pca.explained_variance_, linewidth=2)
+    plt.axis('tight')
+    plt.xlabel('n_components')
+    plt.ylabel('explained_variance_')
+    plt.show()
+    
+    train_pca = pca.transform(xTrain)
+    test_pca = pca.transform(xTest)
+
+    lassoregr = LassoCV(alphas=[0.1,0.001,0.0001,1,2,3,4,5,6,7,8,9,10,11,12]).fit(train_pca, yTrain)
+    rmse= np.sqrt(-cross_val_score(lassoregr, train_pca,yTrain, scoring="neg_mean_squared_error", cv = 5)).mean()
+    print("root mean squared error is:",rmse)
+    models_rmse.append("root mean squared error of lasso is:" + str(rmse)) 
+    y_lasso = lassoregr.predict(xTest)
+    
+    return y_lasso
+# Function4:end  
+
+#"""
+#"""
+#def _lassoRegr():
+#    # Fitting the model and predicting using Lasso Regression
+#    lassoregr = LassoCV(alphas=[0.1,0.001,0.0001,1,2,3,4,5,6,7,8,9,10,11,12]).fit(xTrain, yTrain)
+#    y_lasso = lassoregr.predict(xTest)
+#
+#    # Root mean squre with lasso regression
+#    rmse = np.sqrt(-cross_val_score(lassoregr, xTrain, yTrain, scoring="neg_mean_squared_error", cv = 5)).mean()
+#    print ("Root mean square error of Lasso regression", rmse)
+#    
+#    return y_lasso
+
+
+"""
+"""
+# Function5: function to perform ridge regression on test data to predict the selling price.
+def _ridgeRegr():
+    # Fitting the model and predicting using Ridge Regression
+    ridgeregr = RidgeCV(alphas=[0.1,0.001,0.0001,1,2,3,4,5,6,7,8,9,10,11,12]).fit(xTrain,yTrain)
+    y_ridge = ridgeregr.predict(xTest)
+
+    # Root mean squre with Ridge Regression
+    ridgermse = np.sqrt(-cross_val_score(ridgeregr, xTrain, yTrain, scoring="neg_mean_squared_error", cv = 5)).mean()
+    print ("Root mean square error of rigde:",ridgermse)
+    models_rmse.append("Root mean square error of rigde:"+ str(ridgermse)) 
+    
+    return y_ridge
+# Function5:end
+
+"""
+"""
+# Function6: function to perform xgboost regression on test data to predict the selling price.
+def _xboost():
+    # Fitting the model and predicting using xgboost
+    regr = xgb.XGBRegressor(colsample_bytree=0.4,
+            gamma=0.045,
+            learning_rate=0.07,
+            max_depth=20,
+            min_child_weight=1.5,
+            n_estimators=300,
+            reg_alpha=0.65,
+            reg_lambda=0.45,
+            subsample=0.95)
+
+    regr.fit(xTrain, yTrain)
+    y_pred_xgb = regr.predict(xTest)
+
+    # Root mean squre with xboost
+    xboostrmse = np.sqrt(-cross_val_score(regr, xTrain, yTrain, scoring="neg_mean_squared_error", cv = 5)).mean()
+    print ("Root mean square error of xboost:",xboostrmse)
+    models_rmse.append("Root mean square error of xboost:"+ str(xboostrmse))
+    return  y_pred_xgb
+# Function6:end    
+     
+"""
+"""
+# Function7: function to perform random on test data to predict the selling price.
+def _randomForest():
+    rf = RandomForestRegressor(10, max_features='sqrt')
+    rf.fit(xTrain,yTrain)
+    y_rf = rf.predict(xTest)
+    
+    # Root mean squre with randomforest
+    rndmfrmse = np.sqrt(-cross_val_score(rf, xTrain, yTrain, scoring="neg_mean_squared_error", cv = 5)).mean()
+    print ("Root mean square error of randomforest:",rndmfrmse)
+    models_rmse.append("Root mean square error of randomforest:"+ str(rndmfrmse))
+    return y_rf
+# Function7:end    
+
+# Function8: function to store the predicted values in the csv file.
+"""
+Please change submission file path below.
+"""
+def _submission(y_final):
+    # Preparing for submissions
+    submission_df = pd.DataFrame(data= {'Id' : test_df.Id, 'SalePrice': y_final})
+    submission_df.to_csv('D:/Aakash_Documents/MS_Collections/AcceptanceFromSaintPeters/ClassStuff/DS_680_MrktgAnalytic/KaggleCompetitions/HousePricePrediction/data/submisison.csv', index=False)
+# Function8:end    
+###############################section 2: End##################################
+
+###################section 3: use all the functions defined above##############
+
+# Remove skewness
+yTrain = _removeSkewness()
+
+# Concatenates the data
+alldf = pd.concat((train_df, test_df), axis=0,ignore_index=True)
+
+# Creates dummy variables
+df = _dummyCreate()
+
+# Retrieve all numeric features
+numeric_columns = alldf.columns[alldf.dtypes != 'object']
+
+# Normalize the data set
+index_train,index_test,xTrain,xTest = normalizeData(numeric_columns)
+
+# Using PCA and LassoReggression
+# Use this function and comment the functions below while running pca+lasso
+y_final = _pcaLassoRegr()
+_submission(np.exp(y_final))
+
+## Using LassoReggression
+## Use this function and comment the remaining functions while running lasso
+#y_final = _lassoRegr()
+#_submission(np.exp(y_final))
+
+
+# Using RidgeReggression
+# Use this function and comment the remaining functions while running ridge
+y_final = _ridgeRegr()
+_submission(np.exp(y_final))
+
+# Using RandomForest
+# Use this function and comment the remaining functions while running RandomForest
+y_final = _randomForest()
+_submission(np.exp(y_final))
+
+# Using xboost
+y_final = _xboost()
+_submission(np.exp(y_final))
+###############################section 3: End##################################
+
+models_rmse
